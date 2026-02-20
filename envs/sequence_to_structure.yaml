@@ -1,0 +1,12 @@
+name: tcrmd-s2s
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy>=1.25
+  - pytest>=7.4
+  - pytest-cov>=4.1
+  - pip
+  - pip:
+    - boltz>=0.4

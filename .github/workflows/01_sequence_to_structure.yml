@@ -1,0 +1,50 @@
+name: "01 · Sequence-to-Structure"
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+    paths:
+      - "tcrmd/sequence_to_structure.py"
+      - "tests/test_sequence_to_structure.py"
+      - "tests/data/**"
+      - "docker/sequence_to_structure.Dockerfile"
+      - "envs/sequence_to_structure.yaml"
+      - ".github/workflows/01_sequence_to_structure.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-sequence-to-structure:
+    name: Sequence-to-Structure Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f docker/sequence_to_structure.Dockerfile \
+            -t tcrmd-s2s:${{ github.sha }} \
+            .
+
+      - name: Run test suite
+        run: |
+          mkdir -p test-results
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            tcrmd-s2s:${{ github.sha }} \
+            /workspace/tests/test_sequence_to_structure.py \
+            -v --tb=short \
+            --junitxml=/workspace/test-results/s2s-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s2s-test-results-${{ github.sha }}
+          path: test-results/
+          retention-days: 7

@@ -1,0 +1,51 @@
+name: "03 · Simulation"
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+    paths:
+      - "tcrmd/simulate.py"
+      - "tcrmd/system_preparation.py"
+      - "tests/test_simulate.py"
+      - "tests/data/**"
+      - "docker/simulate.Dockerfile"
+      - "envs/simulate.yaml"
+      - ".github/workflows/03_simulate.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-simulate:
+    name: Simulation Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f docker/simulate.Dockerfile \
+            -t tcrmd-simulate:${{ github.sha }} \
+            .
+
+      - name: Run test suite
+        run: |
+          mkdir -p test-results
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            tcrmd-simulate:${{ github.sha }} \
+            /workspace/tests/test_simulate.py \
+            -v --tb=short \
+            --junitxml=/workspace/test-results/simulate-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulate-test-results-${{ github.sha }}
+          path: test-results/
+          retention-days: 7

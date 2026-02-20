@@ -1,0 +1,50 @@
+name: "02 · System Preparation"
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+    paths:
+      - "tcrmd/system_preparation.py"
+      - "tests/test_system_preparation.py"
+      - "tests/data/**"
+      - "docker/system_preparation.Dockerfile"
+      - "envs/system_preparation.yaml"
+      - ".github/workflows/02_system_preparation.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-system-preparation:
+    name: System Preparation Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f docker/system_preparation.Dockerfile \
+            -t tcrmd-sysprep:${{ github.sha }} \
+            .
+
+      - name: Run test suite
+        run: |
+          mkdir -p test-results
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            tcrmd-sysprep:${{ github.sha }} \
+            /workspace/tests/test_system_preparation.py \
+            -v --tb=short \
+            --junitxml=/workspace/test-results/sysprep-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sysprep-test-results-${{ github.sha }}
+          path: test-results/
+          retention-days: 7

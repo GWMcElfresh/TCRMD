@@ -1,319 +1,311 @@
 """
-Tests for tcrmd.system_preparation module.
+Tests for tcrmd.system_preparation.
 
-All heavy external dependencies (pdbfixer, openmm, propka) are mocked so the
-tests run in a plain Python environment (pytest + numpy only).
+These tests use real dependencies (pdbfixer, openmm, propka) — no mocking.
+They are designed to run inside docker/system_preparation.Dockerfile, which
+installs all required packages.
+
+A minimal 5-residue alanine PDB (tests/data/minimal.pdb) is used as the
+shared test fixture so that PDBFixer, PROPKA, and OpenMM all operate on a
+real structure.
+
+Tests that require a dependency that is not installed are skipped with
+``pytest.importorskip``.
+
+Naming conventions:
+    Exported functions : PascalCase
+    Public arguments   : camelCase
+    Internal variables : snake_case
 """
 
 import os
+import shutil
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch, call
+from pathlib import Path
+
+_DATA_DIR = Path(__file__).parent / "data"
+_MINIMAL_PDB = str(_DATA_DIR / "minimal.pdb")
 
 
 # ---------------------------------------------------------------------------
-# Helper: write a minimal PDB file to a temp location
-# ---------------------------------------------------------------------------
-_MINIMAL_PDB = """\
-ATOM      1  N   ALA A   1       1.000   1.000   1.000  1.00  0.00           N
-ATOM      2  CA  ALA A   1       1.540   1.000   1.000  1.00  0.00           C
-ATOM      3  C   ALA A   1       2.060   2.420   1.000  1.00  0.00           C
-ATOM      4  O   ALA A   1       1.290   3.360   1.000  1.00  0.00           O
-END
-"""
-
-
-def _write_pdb(directory: str, name: str = "test.pdb") -> str:
-    path = os.path.join(directory, name)
-    with open(path, "w") as fh:
-        fh.write(_MINIMAL_PDB)
-    return path
-
-
-# ---------------------------------------------------------------------------
-# CleanPDB tests
+# CleanPDB
 # ---------------------------------------------------------------------------
 class TestCleanPDB(unittest.TestCase):
+    pdbfixer = None
+    openmm = None
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import pdbfixer  # noqa: F401
+            import openmm.app  # noqa: F401
+            cls.pdbfixer = True
+        except ImportError:
+            cls.pdbfixer = False
+
     def setUp(self):
+        if not self.pdbfixer:
+            self.skipTest("pdbfixer/openmm not installed")
         self.tmp = tempfile.mkdtemp()
 
-    def _make_mock_fixer(self):
-        fixer = MagicMock()
-        fixer.topology = MagicMock()
-        fixer.positions = MagicMock()
-        return fixer
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_missing_input_raises_file_not_found(self):
         from tcrmd.system_preparation import CleanPDB
-
         with self.assertRaises(FileNotFoundError):
-            CleanPDB("/nonexistent/input.pdb", os.path.join(self.tmp, "out.pdb"))
+            CleanPDB("/nonexistent/input.pdb",
+                     os.path.join(self.tmp, "out.pdb"))
 
-    def test_clean_pdb_calls_fixer_methods(self):
-        # Create the input PDB *before* any mocking so os.path.isfile returns True.
-        input_pdb = _write_pdb(self.tmp)
-        out_pdb = os.path.join(self.tmp, "clean.pdb")
+    def test_creates_output_file(self):
+        from tcrmd.system_preparation import CleanPDB
+        out = os.path.join(self.tmp, "cleaned.pdb")
+        CleanPDB(_MINIMAL_PDB, out)
+        self.assertTrue(os.path.isfile(out))
 
-        mock_fixer_instance = self._make_mock_fixer()
-        mock_fixer_cls = MagicMock(return_value=mock_fixer_instance)
-        mock_pdb_file_cls = MagicMock()
-
-        import tcrmd.system_preparation as sp
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "pdbfixer": MagicMock(PDBFixer=mock_fixer_cls),
-                "openmm": MagicMock(),
-                "openmm.app": MagicMock(PDBFile=mock_pdb_file_cls),
-            },
-        ):
-            with patch("builtins.open", unittest.mock.mock_open()):
-                with patch("os.makedirs"):
-                    try:
-                        result = sp.CleanPDB(input_pdb, out_pdb)
-                        self.assertIsInstance(result, str)
-                    except Exception:
-                        pass  # ImportError if reload is needed; mock depth may vary.
+    def test_output_contains_atom_records(self):
+        from tcrmd.system_preparation import CleanPDB
+        out = os.path.join(self.tmp, "cleaned_atom.pdb")
+        CleanPDB(_MINIMAL_PDB, out)
+        with open(out) as fh:
+            content = fh.read()
+        self.assertIn("ATOM", content)
 
     def test_returns_absolute_path(self):
-        """When the heavy deps are absent, an ImportError is raised – not a
-        wrong return value, so we test only the file-not-found guard here."""
         from tcrmd.system_preparation import CleanPDB
+        out = os.path.join(self.tmp, "cleaned_abspath.pdb")
+        result = CleanPDB(_MINIMAL_PDB, out)
+        self.assertTrue(os.path.isabs(result))
 
-        with self.assertRaises((FileNotFoundError, ImportError)):
-            CleanPDB("relative/path.pdb", "out.pdb")
+    def test_hydrogens_added_when_requested(self):
+        """The cleaned structure should contain hydrogen atoms."""
+        from tcrmd.system_preparation import CleanPDB
+        out = os.path.join(self.tmp, "cleaned_H.pdb")
+        CleanPDB(_MINIMAL_PDB, out, addMissingHydrogens=True, ph=7.4)
+        with open(out) as fh:
+            lines = [l for l in fh if l.startswith("ATOM") or l.startswith("HETATM")]
+        atom_names = [l[12:16].strip() for l in lines]
+        has_hydrogen = any(n.startswith("H") for n in atom_names)
+        self.assertTrue(has_hydrogen,
+                        "Expected hydrogen atoms after addMissingHydrogens=True")
+
+    def test_skip_hydrogens_when_not_requested(self):
+        """When addMissingHydrogens=False, no hydrogens should be added."""
+        from tcrmd.system_preparation import CleanPDB
+        out = os.path.join(self.tmp, "cleaned_noH.pdb")
+        CleanPDB(_MINIMAL_PDB, out, addMissingHydrogens=False)
+        with open(out) as fh:
+            lines = [l for l in fh if l.startswith("ATOM")]
+        atom_names = [l[12:16].strip() for l in lines]
+        has_hydrogen = any(n.startswith("H") for n in atom_names)
+        self.assertFalse(has_hydrogen,
+                         "Expected no hydrogen atoms when addMissingHydrogens=False")
+
+    def test_creates_nested_output_dir(self):
+        from tcrmd.system_preparation import CleanPDB
+        nested_out = os.path.join(self.tmp, "a", "b", "cleaned.pdb")
+        CleanPDB(_MINIMAL_PDB, nested_out)
+        self.assertTrue(os.path.isfile(nested_out))
+
+    def test_ph_parameter_accepted(self):
+        """Verify the ph argument is accepted without error."""
+        from tcrmd.system_preparation import CleanPDB
+        out = os.path.join(self.tmp, "cleaned_ph6.pdb")
+        CleanPDB(_MINIMAL_PDB, out, ph=6.0)
+        self.assertTrue(os.path.isfile(out))
 
 
 # ---------------------------------------------------------------------------
-# AssignProtonationStates tests
+# AssignProtonationStates
 # ---------------------------------------------------------------------------
 class TestAssignProtonationStates(unittest.TestCase):
+    propka_available = False
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import propka.run  # noqa: F401
+            cls.propka_available = True
+        except ImportError:
+            cls.propka_available = False
+
     def setUp(self):
+        if not self.propka_available:
+            self.skipTest("propka not installed")
         self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _get_cleaned_pdb(self) -> str:
+        """Return a PDB cleaned with PDBFixer (needed by PROPKA)."""
+        from tcrmd.system_preparation import CleanPDB
+        cleaned = os.path.join(self.tmp, "cleaned_for_propka.pdb")
+        try:
+            CleanPDB(_MINIMAL_PDB, cleaned, addMissingHydrogens=True, ph=7.4)
+        except ImportError:
+            self.skipTest("pdbfixer/openmm not installed (needed for PROPKA input)")
+        return cleaned
 
     def test_missing_input_raises(self):
         from tcrmd.system_preparation import AssignProtonationStates
-
         with self.assertRaises(FileNotFoundError):
-            AssignProtonationStates(
-                "/nonexistent/input.pdb",
-                os.path.join(self.tmp, "out.pdb"),
-            )
+            AssignProtonationStates("/nonexistent/input.pdb",
+                                    os.path.join(self.tmp, "out.pdb"))
 
-    def test_import_error_when_propka_absent(self):
-        import sys
+    def test_creates_output_file(self):
         from tcrmd.system_preparation import AssignProtonationStates
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "protonated.pdb")
+        AssignProtonationStates(cleaned, out, ph=7.4)
+        self.assertTrue(os.path.isfile(out))
 
-        input_pdb = _write_pdb(self.tmp)
-        # Temporarily remove propka from sys.modules to simulate absence.
-        saved = sys.modules.pop("propka", None)
-        saved_run = sys.modules.pop("propka.run", None)
-        try:
-            with self.assertRaises(ImportError):
-                AssignProtonationStates(
-                    input_pdb,
-                    os.path.join(self.tmp, "protonated.pdb"),
-                )
-        finally:
-            if saved is not None:
-                sys.modules["propka"] = saved
-            if saved_run is not None:
-                sys.modules["propka.run"] = saved_run
+    def test_output_contains_atom_records(self):
+        from tcrmd.system_preparation import AssignProtonationStates
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "protonated_atom.pdb")
+        AssignProtonationStates(cleaned, out, ph=7.4)
+        with open(out) as fh:
+            self.assertIn("ATOM", fh.read())
 
-    def test_propka_called_with_correct_ph(self):
-        """Verify that propka.run.single is invoked with the input path."""
-        input_pdb = _write_pdb(self.tmp)
-        out_pdb = os.path.join(self.tmp, "protonated.pdb")
+    def test_returns_absolute_path(self):
+        from tcrmd.system_preparation import AssignProtonationStates
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "protonated_abs.pdb")
+        result = AssignProtonationStates(cleaned, out, ph=7.4)
+        self.assertTrue(os.path.isabs(result))
 
-        mock_mol = MagicMock()
-        mock_propka_module = MagicMock()
-        mock_propka_module.single.return_value = mock_mol
-
-        # `import propka.run as propka_run` resolves to sys.modules["propka"].run
-        # so set the .run attribute on the propka package mock.
-        mock_propka_pkg = MagicMock()
-        mock_propka_pkg.run = mock_propka_module
-
-        with patch.dict(
-            "sys.modules",
-            {"propka": mock_propka_pkg, "propka.run": mock_propka_module},
-        ):
-            import importlib
-            import tcrmd.system_preparation as sp
-            importlib.reload(sp)
-            try:
-                sp.AssignProtonationStates(input_pdb, out_pdb, ph=6.5)
-            except Exception:
-                pass  # Acceptable if the write step fails; we care that single() was called.
-            mock_propka_module.single.assert_called_once_with(
-                input_pdb, optargs=["--quiet"]
-            )
+    def test_different_ph_values_accepted(self):
+        """PROPKA should run without error at different pH values."""
+        from tcrmd.system_preparation import AssignProtonationStates
+        cleaned = self._get_cleaned_pdb()
+        for ph_val in (5.0, 7.4, 9.0):
+            out = os.path.join(self.tmp, f"protonated_ph{ph_val}.pdb")
+            AssignProtonationStates(cleaned, out, ph=ph_val)
+            self.assertTrue(os.path.isfile(out),
+                            f"No output file at pH {ph_val}")
 
 
 # ---------------------------------------------------------------------------
-# SolvateSystem tests
+# SolvateSystem
 # ---------------------------------------------------------------------------
 class TestSolvateSystem(unittest.TestCase):
+    openmm_available = False
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import openmm.app  # noqa: F401
+            cls.openmm_available = True
+        except ImportError:
+            cls.openmm_available = False
+
     def setUp(self):
+        if not self.openmm_available:
+            self.skipTest("openmm not installed")
         self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _get_cleaned_pdb(self) -> str:
+        from tcrmd.system_preparation import CleanPDB
+        cleaned = os.path.join(self.tmp, "cleaned_for_solv.pdb")
+        CleanPDB(_MINIMAL_PDB, cleaned, addMissingHydrogens=True, ph=7.4)
+        return cleaned
 
     def test_missing_input_raises(self):
         from tcrmd.system_preparation import SolvateSystem
-
         with self.assertRaises(FileNotFoundError):
-            SolvateSystem("/nonexistent/input.pdb", os.path.join(self.tmp, "out.pdb"))
+            SolvateSystem("/nonexistent/input.pdb",
+                          os.path.join(self.tmp, "solvated.pdb"))
 
-    def test_import_error_when_openmm_absent(self):
-        import sys
+    def test_creates_solvated_pdb(self):
         from tcrmd.system_preparation import SolvateSystem
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "solvated.pdb")
+        SolvateSystem(cleaned, out)
+        self.assertTrue(os.path.isfile(out))
 
-        input_pdb = _write_pdb(self.tmp)
-        saved_openmm = sys.modules.pop("openmm", None)
-        saved_app = sys.modules.pop("openmm.app", None)
-        saved_unit = sys.modules.pop("openmm.unit", None)
-        try:
-            with self.assertRaises(ImportError):
-                SolvateSystem(
-                    input_pdb,
-                    os.path.join(self.tmp, "solvated.pdb"),
-                )
-        finally:
-            if saved_openmm:
-                sys.modules["openmm"] = saved_openmm
-            if saved_app:
-                sys.modules["openmm.app"] = saved_app
-            if saved_unit:
-                sys.modules["openmm.unit"] = saved_unit
-
-    def test_default_water_model_accepted(self):
-        """SolvateSystem should not raise when openmm is mocked properly."""
-        input_pdb = _write_pdb(self.tmp)
-        out_pdb = os.path.join(self.tmp, "solvated.pdb")
-
-        # Build a comprehensive openmm mock.
-        mock_positions = MagicMock()
-        mock_modeller = MagicMock()
-        mock_modeller.topology = MagicMock()
-        mock_modeller.positions = mock_positions
-        mock_pdb = MagicMock()
-        mock_pdb.topology = MagicMock()
-        mock_pdb.positions = mock_positions
-        mock_ff = MagicMock()
-        mock_app = MagicMock()
-        mock_app.PDBFile.return_value = mock_pdb
-        mock_app.ForceField.return_value = mock_ff
-        mock_app.Modeller.return_value = mock_modeller
-        mock_app.PME = "PME"
-        mock_app.HBonds = "HBonds"
-        mock_unit = MagicMock()
-        mock_unit.nanometers = MagicMock()
-        mock_unit.molar = MagicMock()
-
-        import tcrmd.system_preparation as sp
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "openmm": MagicMock(),
-                "openmm.app": mock_app,
-                "openmm.unit": mock_unit,
-            },
-        ):
-            with patch("builtins.open", unittest.mock.mock_open()):
-                with patch("os.makedirs"):
-                    try:
-                        sp.SolvateSystem(input_pdb, out_pdb)
-                    except Exception:
-                        pass  # Acceptable if mock isn't complete enough.
-
-    def test_padding_parameter_accepted(self):
-        """Ensure the function signature accepts a custom padding value."""
+    def test_solvated_pdb_contains_water(self):
+        """After solvation the PDB should contain water residues (HOH/WAT)."""
         from tcrmd.system_preparation import SolvateSystem
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "solvated_water.pdb")
+        SolvateSystem(cleaned, out)
+        with open(out) as fh:
+            content = fh.read()
+        has_water = "HOH" in content or "WAT" in content
+        self.assertTrue(has_water,
+                        "Solvated PDB should contain water molecules")
 
-        # Will raise FileNotFoundError, not TypeError, for missing file.
-        with self.assertRaises(FileNotFoundError):
-            SolvateSystem(
-                "/nonexistent.pdb",
-                "/tmp/out.pdb",
-                padding=1.5,
-            )
-
-    def test_ionic_strength_parameter_accepted(self):
-        """Ensure ionicStrength is accepted by the function signature."""
+    def test_returns_absolute_path(self):
         from tcrmd.system_preparation import SolvateSystem
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "solvated_abs.pdb")
+        result = SolvateSystem(cleaned, out)
+        self.assertTrue(os.path.isabs(result))
 
-        with self.assertRaises(FileNotFoundError):
-            SolvateSystem(
-                "/nonexistent.pdb",
-                "/tmp/out.pdb",
-                ionicStrength=0.1,
-            )
-
-    def test_custom_ions_accepted(self):
-        """Ensure positiveIon / negativeIon parameters are accepted."""
+    def test_custom_padding_accepted(self):
         from tcrmd.system_preparation import SolvateSystem
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "solvated_1nm.pdb")
+        SolvateSystem(cleaned, out, padding=0.8)
+        self.assertTrue(os.path.isfile(out))
 
-        with self.assertRaises(FileNotFoundError):
-            SolvateSystem(
-                "/nonexistent.pdb",
-                "/tmp/out.pdb",
-                positiveIon="K+",
-                negativeIon="Cl-",
-            )
+    def test_custom_ionic_strength_accepted(self):
+        from tcrmd.system_preparation import SolvateSystem
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "solvated_ionic.pdb")
+        SolvateSystem(cleaned, out, ionicStrength=0.1)
+        self.assertTrue(os.path.isfile(out))
 
 
 # ---------------------------------------------------------------------------
-# Integration-style checks (no openmm/pdbfixer needed)
+# Signature / naming-convention checks (no deps needed)
 # ---------------------------------------------------------------------------
 class TestSystemPreparationSignatures(unittest.TestCase):
-    """Verify that public function signatures use camelCase arguments."""
-
     def test_clean_pdb_signature(self):
         import inspect
         from tcrmd.system_preparation import CleanPDB
+        params = list(inspect.signature(CleanPDB).parameters)
+        for name in ("inputPdbPath", "outputPdbPath", "addMissingHydrogens",
+                     "addMissingResidues", "removeHeterogens", "ph"):
+            self.assertIn(name, params)
 
-        params = list(inspect.signature(CleanPDB).parameters.keys())
-        self.assertIn("inputPdbPath", params)
-        self.assertIn("outputPdbPath", params)
-        self.assertIn("addMissingHydrogens", params)
-        self.assertIn("addMissingResidues", params)
-        self.assertIn("removeHeterogens", params)
-        self.assertIn("ph", params)
-
-    def test_assign_protonation_states_signature(self):
+    def test_assign_protonation_signature(self):
         import inspect
         from tcrmd.system_preparation import AssignProtonationStates
-
-        params = list(inspect.signature(AssignProtonationStates).parameters.keys())
-        self.assertIn("inputPdbPath", params)
-        self.assertIn("outputPdbPath", params)
-        self.assertIn("ph", params)
+        params = list(inspect.signature(AssignProtonationStates).parameters)
+        for name in ("inputPdbPath", "outputPdbPath", "ph"):
+            self.assertIn(name, params)
 
     def test_solvate_system_signature(self):
         import inspect
         from tcrmd.system_preparation import SolvateSystem
+        params = list(inspect.signature(SolvateSystem).parameters)
+        for name in ("inputPdbPath", "outputPdbPath", "padding",
+                     "ionicStrength", "waterModel", "positiveIon", "negativeIon"):
+            self.assertIn(name, params)
 
-        params = list(inspect.signature(SolvateSystem).parameters.keys())
-        self.assertIn("inputPdbPath", params)
-        self.assertIn("outputPdbPath", params)
-        self.assertIn("padding", params)
-        self.assertIn("ionicStrength", params)
-        self.assertIn("waterModel", params)
-
-    def test_clean_pdb_default_ph(self):
+    def test_default_ph_is_7_4(self):
         import inspect
         from tcrmd.system_preparation import CleanPDB
-
         sig = inspect.signature(CleanPDB)
         self.assertAlmostEqual(sig.parameters["ph"].default, 7.4)
 
-    def test_solvate_system_default_padding(self):
+    def test_default_padding_is_1_0(self):
         import inspect
         from tcrmd.system_preparation import SolvateSystem
-
         sig = inspect.signature(SolvateSystem)
         self.assertAlmostEqual(sig.parameters["padding"].default, 1.0)
+
+    def test_function_names_are_pascal_case(self):
+        import tcrmd.system_preparation as sp
+        for name in ("CleanPDB", "AssignProtonationStates", "SolvateSystem"):
+            self.assertTrue(hasattr(sp, name),
+                            f"Expected PascalCase function '{name}' not found")
 
 
 if __name__ == "__main__":

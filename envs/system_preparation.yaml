@@ -1,0 +1,12 @@
+name: tcrmd-sysprep
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - openmm>=8.1
+  - pdbfixer>=1.9
+  - propka>=3.5
+  - numpy>=1.25
+  - pytest>=7.4
+  - pytest-cov>=4.1
