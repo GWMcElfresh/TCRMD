@@ -324,6 +324,16 @@ def RunSimulation(
     if minimizeFirst:
         minimized_pdb = os.path.join(outputDir, "minimized.pdb")
         potential_energy = MinimizeEnergy(simulation, minimized_pdb)
+    else:
+        # Even when the caller skips the full minimisation, a brief steric-clash
+        # removal is required to prevent NaN velocities on the first integration
+        # step.  We do not write a file or expose the energy so that
+        # ``minimized_pdb`` and ``potential_energy`` correctly remain ``None``.
+        try:
+            from openmm import unit as _unit  # noqa: PLC0415
+            simulation.minimizeEnergy(maxIterations=200)
+        except Exception:  # pragma: no cover – best-effort only
+            pass
 
     trajectory_path = RunEquilibration(
         simulation,
