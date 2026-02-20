@@ -132,11 +132,17 @@ def AssignProtonationStates(
     import tempfile
 
     tmp_dir = tempfile.mkdtemp()
+    orig_dir = os.getcwd()
     try:
         tmp_input = os.path.join(tmp_dir, os.path.basename(inputPdbPath))
         shutil.copy2(inputPdbPath, tmp_input)
+        # PROPKA's write_pka() writes "<stem>.pka" as a bare relative path,
+        # resolved against the CWD.  Change CWD to tmp_dir so the sidecar
+        # file is confined there and never written to a read-only directory.
+        os.chdir(tmp_dir)
         propka_run.single(tmp_input, optargs=["--quiet"])
     finally:
+        os.chdir(orig_dir)
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     # Apply pH-dependent protonation using PDBFixer, which uses the same
