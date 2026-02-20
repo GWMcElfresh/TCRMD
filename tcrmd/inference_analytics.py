@@ -350,17 +350,31 @@ def ComputeBuriedSurfaceArea(
         FileNotFoundError: If either input file does not exist.
         ImportError: If ``MDAnalysis`` is not installed.
     """
+    # File-existence guard must fire before any MDAnalysis import.
+    if not os.path.isfile(topologyPath):
+        raise FileNotFoundError(f"Topology file not found: {topologyPath}")
+    if trajectoryPath is not None and not os.path.isfile(trajectoryPath):
+        raise FileNotFoundError(f"Trajectory file not found: {trajectoryPath}")
+
     try:
         import MDAnalysis  # noqa: F401
     except ImportError as exc:
         raise ImportError("MDAnalysis is required for ComputeBuriedSurfaceArea") from exc
 
+    # ShrakeRupley was introduced in MDAnalysis 2.4.0.  Try the canonical path
+    # first; fall back to the legacy location used in some conda-forge builds.
     try:
         from MDAnalysis.analysis.solvent_accessibility import ShrakeRupley
-    except ImportError as exc:
-        raise ImportError(
-            "MDAnalysis>=2.4 with ShrakeRupley is required for ComputeBuriedSurfaceArea"
-        ) from exc
+    except ImportError:
+        try:
+            from MDAnalysis.analysis.hydration_analysis import (  # type: ignore[no-redef]
+                ShrakeRupley,
+            )
+        except ImportError as exc:
+            raise ImportError(
+                "MDAnalysis>=2.4 with ShrakeRupley is required for "
+                "ComputeBuriedSurfaceArea"
+            ) from exc
 
     universe = _load_universe(topologyPath, trajectoryPath)
 

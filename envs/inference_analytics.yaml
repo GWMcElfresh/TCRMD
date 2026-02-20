@@ -4,7 +4,7 @@ channels:
   - defaults
 dependencies:
   - python=3.11
-  - mdanalysis>=2.6
+  - mdanalysis=2.7.0
   - numpy>=1.25
   - pytest>=7.4
   - pytest-cov>=4.1
