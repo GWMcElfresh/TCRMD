@@ -126,13 +126,15 @@ class TestAssignProtonationStates(unittest.TestCase):
     def setUpClass(cls):
         try:
             import propka.run  # noqa: F401
+            import pdbfixer  # noqa: F401
+            import openmm.app  # noqa: F401
             cls.propka_available = True
         except ImportError:
             cls.propka_available = False
 
     def setUp(self):
         if not self.propka_available:
-            self.skipTest("propka not installed")
+            self.skipTest("propka / pdbfixer / openmm not installed")
         self.tmp = tempfile.mkdtemp()
 
     def tearDown(self):
@@ -185,6 +187,33 @@ class TestAssignProtonationStates(unittest.TestCase):
             AssignProtonationStates(cleaned, out, ph=ph_val)
             self.assertTrue(os.path.isfile(out),
                             f"No output file at pH {ph_val}")
+
+    def test_creates_nested_output_dir(self):
+        from tcrmd.system_preparation import AssignProtonationStates
+        cleaned = self._get_cleaned_pdb()
+        nested_out = os.path.join(self.tmp, "a", "b", "protonated.pdb")
+        AssignProtonationStates(cleaned, nested_out, ph=7.4)
+        self.assertTrue(os.path.isfile(nested_out))
+
+    def test_output_written_to_provided_path_not_cwd(self):
+        """Output must go to outputPdbPath, never to the current directory."""
+        from tcrmd.system_preparation import AssignProtonationStates
+        cleaned = self._get_cleaned_pdb()
+        out = os.path.join(self.tmp, "protonated_cwd_check.pdb")
+        orig_cwd = os.getcwd()
+        try:
+            os.chdir(self.tmp)
+            AssignProtonationStates(cleaned, out, ph=7.4)
+        finally:
+            os.chdir(orig_cwd)
+        self.assertTrue(os.path.isfile(out))
+        # Verify no stray files were created in CWD.
+        stray = os.path.join(self.tmp, os.path.basename(
+            os.path.splitext(cleaned)[0] + ".propka"
+        ))
+        # The .propka sidecar should NOT be in self.tmp (it lives in tmp_dir).
+        self.assertFalse(os.path.isfile(stray),
+                         ".propka sidecar leaked into test tmp dir")
 
 
 # ---------------------------------------------------------------------------

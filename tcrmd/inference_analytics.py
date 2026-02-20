@@ -357,25 +357,27 @@ def ComputeBuriedSurfaceArea(
     group_b = universe.select_atoms(selectionB)
     complex_group = group_a | group_b
 
-    frame_indices = []
+    # Run each ShrakeRupley analysis over the full trajectory in a separate
+    # pass.  Calling ShrakeRupley.run() inside a "for ts in trajectory:" loop
+    # would reset the trajectory position on every frame, causing incorrect
+    # frame ordering.  Three independent passes are correct and deterministic.
+    sr_a = ShrakeRupley(group_a, probe_radius=probeRadius)
+    sr_a.run()
+
+    sr_b = ShrakeRupley(group_b, probe_radius=probeRadius)
+    sr_b.run()
+
+    sr_complex = ShrakeRupley(complex_group, probe_radius=probeRadius)
+    sr_complex.run()
+
+    n_frames = len(universe.trajectory)
+    frame_indices = list(range(n_frames))
     bsa_values = []
-
-    for ts in universe.trajectory:
-        sr_a = ShrakeRupley(group_a, probe_radius=probeRadius)
-        sr_a.run(start=ts.frame, stop=ts.frame + 1)
-        sasa_a = float(sr_a.results.areas[0].sum())
-
-        sr_b = ShrakeRupley(group_b, probe_radius=probeRadius)
-        sr_b.run(start=ts.frame, stop=ts.frame + 1)
-        sasa_b = float(sr_b.results.areas[0].sum())
-
-        sr_complex = ShrakeRupley(complex_group, probe_radius=probeRadius)
-        sr_complex.run(start=ts.frame, stop=ts.frame + 1)
-        sasa_complex = float(sr_complex.results.areas[0].sum())
-
-        bsa = 0.5 * (sasa_a + sasa_b - sasa_complex)
-        frame_indices.append(ts.frame)
-        bsa_values.append(bsa)
+    for i in range(n_frames):
+        sasa_a = float(sr_a.results.areas[i].sum())
+        sasa_b = float(sr_b.results.areas[i].sum())
+        sasa_complex = float(sr_complex.results.areas[i].sum())
+        bsa_values.append(0.5 * (sasa_a + sasa_b - sasa_complex))
 
     frame_arr = np.array(frame_indices, dtype=int)
     bsa_arr = np.array(bsa_values, dtype=float)

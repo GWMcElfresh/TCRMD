@@ -67,7 +67,6 @@ def _build_universe_and_traj(tmp_dir: str):
             w.write(universe.atoms)
 
     return topo_pdb, traj_dcd
-    return topo_pdb, traj_dcd
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +378,69 @@ class TestComputeHydrogenBondMap(_MDAnalysisTestCase):
             outputPath=out_npy,
         )
         self.assertTrue(os.path.isfile(out_npy))
+
+
+
+# ---------------------------------------------------------------------------
+# ComputeBuriedSurfaceArea
+# ---------------------------------------------------------------------------
+class TestComputeBuriedSurfaceArea(_MDAnalysisTestCase):
+    def test_missing_topology_raises(self):
+        from tcrmd.inference_analytics import ComputeBuriedSurfaceArea
+        with self.assertRaises(FileNotFoundError):
+            ComputeBuriedSurfaceArea(
+                "/nonexistent/topo.pdb", "/nonexistent/traj.dcd",
+                selectionA="name CA", selectionB="name N",
+            )
+
+    def test_returns_tuple_of_arrays(self):
+        from tcrmd.inference_analytics import ComputeBuriedSurfaceArea
+        frames, bsa = ComputeBuriedSurfaceArea(
+            self.topo_pdb, self.traj_dcd,
+            selectionA="name CA", selectionB="name N",
+        )
+        self.assertIsInstance(frames, np.ndarray)
+        self.assertIsInstance(bsa, np.ndarray)
+
+    def test_length_matches_trajectory_frames(self):
+        from tcrmd.inference_analytics import ComputeBuriedSurfaceArea
+        frames, bsa = ComputeBuriedSurfaceArea(
+            self.topo_pdb, self.traj_dcd,
+            selectionA="name CA", selectionB="name N",
+        )
+        self.assertEqual(len(frames), 5)
+        self.assertEqual(len(bsa), 5)
+
+    def test_output_csv_written(self):
+        from tcrmd.inference_analytics import ComputeBuriedSurfaceArea
+        out_csv = os.path.join(self.tmp, "bsa_output.csv")
+        ComputeBuriedSurfaceArea(
+            self.topo_pdb, self.traj_dcd,
+            selectionA="name CA", selectionB="name N",
+            outputPath=out_csv,
+        )
+        self.assertTrue(os.path.isfile(out_csv))
+
+    def test_output_csv_has_header(self):
+        from tcrmd.inference_analytics import ComputeBuriedSurfaceArea
+        out_csv = os.path.join(self.tmp, "bsa_header.csv")
+        ComputeBuriedSurfaceArea(
+            self.topo_pdb, self.traj_dcd,
+            selectionA="name CA", selectionB="name N",
+            outputPath=out_csv,
+        )
+        with open(out_csv) as fh:
+            header = fh.readline().strip()
+        self.assertIn("bsa", header.lower())
+
+    def test_frame_indices_are_sequential(self):
+        from tcrmd.inference_analytics import ComputeBuriedSurfaceArea
+        frames, _ = ComputeBuriedSurfaceArea(
+            self.topo_pdb, self.traj_dcd,
+            selectionA="name CA", selectionB="name N",
+        )
+        expected = np.arange(5, dtype=int)
+        np.testing.assert_array_equal(frames, expected)
 
 
 # ---------------------------------------------------------------------------

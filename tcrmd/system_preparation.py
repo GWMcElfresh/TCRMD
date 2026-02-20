@@ -112,14 +112,41 @@ def AssignProtonationStates(
     except ImportError as exc:
         raise ImportError("propka is required for AssignProtonationStates") from exc
 
+    try:
+        from pdbfixer import PDBFixer
+        from openmm.app import PDBFile
+    except ImportError as exc:
+        raise ImportError(
+            "pdbfixer and openmm are required for AssignProtonationStates"
+        ) from exc
+
     logger.info(
         "Assigning protonation states at pH %.1f: %s", ph, inputPdbPath
     )
 
-    mol = propka_run.single(inputPdbPath, optargs=["--quiet"])
+    # PROPKA writes a .propka sidecar file next to the input PDB.  Copy the
+    # input to a temporary directory so all intermediate files written by
+    # PROPKA stay in a writable location and never pollute the input directory
+    # or the current working directory.
+    import shutil
+    import tempfile
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        tmp_input = os.path.join(tmp_dir, os.path.basename(inputPdbPath))
+        shutil.copy2(inputPdbPath, tmp_input)
+        propka_run.single(tmp_input, optargs=["--quiet"])
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # Apply pH-dependent protonation using PDBFixer, which uses the same
+    # AMBER/PROPKA-derived pKa data to assign His/Glu/Asp protonation states.
+    fixer = PDBFixer(filename=inputPdbPath)
+    fixer.addMissingHydrogens(ph)
 
     os.makedirs(os.path.dirname(os.path.abspath(outputPdbPath)), exist_ok=True)
-    mol.write_pdb(outputPdbPath, ph, "propka")
+    with open(outputPdbPath, "w") as fh:
+        PDBFile.writeFile(fixer.topology, fixer.positions, fh)
 
     logger.info("Protonated PDB written to %s", outputPdbPath)
     return os.path.abspath(outputPdbPath)

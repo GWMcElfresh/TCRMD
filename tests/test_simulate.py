@@ -118,6 +118,20 @@ class TestSetupSystem(unittest.TestCase):
         )
         self.assertIsNotNone(simulation)
 
+    def test_no_cutoff_nonbonded_method_accepted(self):
+        from tcrmd.simulate import SetupSystem
+        simulation, _ = SetupSystem(
+            self.solvated_pdb, nonbondedMethod="NoCutoff", platformName="CPU"
+        )
+        self.assertIsNotNone(simulation)
+
+    def test_all_bonds_constraint_accepted(self):
+        from tcrmd.simulate import SetupSystem
+        simulation, _ = SetupSystem(
+            self.solvated_pdb, constraintType="AllBonds", platformName="CPU"
+        )
+        self.assertIsNotNone(simulation)
+
 
 # ---------------------------------------------------------------------------
 # MinimizeEnergy
@@ -245,6 +259,16 @@ class TestRunEquilibration(unittest.TestCase):
         ckpt_files = [f for f in os.listdir(out_dir) if f.startswith("checkpoint_")]
         self.assertGreater(len(ckpt_files), 0,
                            "At least one checkpoint file should be created")
+
+    def test_output_dir_created_automatically(self):
+        """RunEquilibration must create outputDir if it does not exist."""
+        from tcrmd.simulate import RunEquilibration
+        sim = self._make_minimized_simulation()
+        out_dir = os.path.join(self.tmp, "new_nested", "equil_dir")
+        self.assertFalse(os.path.isdir(out_dir))
+        RunEquilibration(sim, out_dir, numSteps=10, reportInterval=5,
+                         checkpointInterval=10)
+        self.assertTrue(os.path.isdir(out_dir))
 
 
 # ---------------------------------------------------------------------------
