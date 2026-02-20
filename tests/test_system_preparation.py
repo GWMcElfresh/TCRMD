@@ -121,11 +121,8 @@ class TestAssignProtonationStates(unittest.TestCase):
             if saved_run is not None:
                 sys.modules["propka.run"] = saved_run
 
-    @patch("tcrmd.system_preparation.propka_run", create=True)
-    def test_propka_called_with_correct_ph(self, mock_propka_run):
-        """Verify that propka.run.single is invoked and pH is forwarded."""
-        import sys
-
+    def test_propka_called_with_correct_ph(self):
+        """Verify that propka.run.single is invoked with the input path."""
         input_pdb = _write_pdb(self.tmp)
         out_pdb = os.path.join(self.tmp, "protonated.pdb")
 
@@ -133,9 +130,14 @@ class TestAssignProtonationStates(unittest.TestCase):
         mock_propka_module = MagicMock()
         mock_propka_module.single.return_value = mock_mol
 
+        # `import propka.run as propka_run` resolves to sys.modules["propka"].run
+        # so set the .run attribute on the propka package mock.
+        mock_propka_pkg = MagicMock()
+        mock_propka_pkg.run = mock_propka_module
+
         with patch.dict(
             "sys.modules",
-            {"propka": MagicMock(), "propka.run": mock_propka_module},
+            {"propka": mock_propka_pkg, "propka.run": mock_propka_module},
         ):
             import importlib
             import tcrmd.system_preparation as sp
@@ -143,8 +145,10 @@ class TestAssignProtonationStates(unittest.TestCase):
             try:
                 sp.AssignProtonationStates(input_pdb, out_pdb, ph=6.5)
             except Exception:
-                pass  # We only care the mock was called.
-            # Validate single() was invoked on the (possibly reloaded) module.
+                pass  # Acceptable if the write step fails; we care that single() was called.
+            mock_propka_module.single.assert_called_once_with(
+                input_pdb, optargs=["--quiet"]
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -177,7 +177,6 @@ def SolvateSystem(
     try:
         forcefield = app.ForceField(*ff_files)
     except Exception:
-        # Fallback to generic tip3p if the requested model XML is not bundled.
         logger.warning(
             "Could not load force field for water model '%s'; falling back to tip3pfb",
             waterModel,
