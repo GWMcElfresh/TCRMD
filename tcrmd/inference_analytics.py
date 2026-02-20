@@ -161,16 +161,7 @@ def ComputeHydrogenBondMap(
 
     universe = _load_universe(topologyPath, trajectoryPath)
 
-    hb_analysis = HydrogenBondAnalysis(
-        universe,
-        donors_sel=donorSelection,
-        acceptors_sel=acceptorSelection,
-        d_a_cutoff=distanceCutoff,
-        d_h_a_angle_cutoff=angleCutoff,
-    )
-    hb_analysis.run()
-
-    # Build a residue-level persistence matrix.
+    # Build residue maps from the donor/acceptor selections.
     donor_atoms = universe.select_atoms(donorSelection)
     acceptor_atoms = universe.select_atoms(acceptorSelection)
 
@@ -182,22 +173,49 @@ def ComputeHydrogenBondMap(
 
     persistence_matrix = np.zeros((n_donors, n_acceptors), dtype=np.float64)
 
-    if n_frames > 0 and hb_analysis.results.hbonds.size > 0:
-        donor_resid_map = {rid: i for i, rid in enumerate(donor_resids)}
-        acceptor_resid_map = {rid: i for i, rid in enumerate(acceptor_resids)}
+    # H-bond analysis requires explicit hydrogen atoms and bond topology.
+    # If neither is present (e.g. a coarse heavy-atom PDB) we return the
+    # zero matrix and emit a warning rather than crashing.
+    h_atoms = universe.select_atoms("element H or name H*")
+    if len(h_atoms) == 0:
+        logger.warning(
+            "No hydrogen atoms found in topology '%s'. "
+            "H-bond analysis requires explicit H atoms; returning zero persistence matrix.",
+            topologyPath,
+        )
+    else:
+        try:
+            hb_analysis = HydrogenBondAnalysis(
+                universe,
+                donors_sel=donorSelection,
+                acceptors_sel=acceptorSelection,
+                d_a_cutoff=distanceCutoff,
+                d_h_a_angle_cutoff=angleCutoff,
+            )
+            hb_analysis.run()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "HydrogenBondAnalysis failed (%s: %s); returning zero persistence matrix.",
+                type(exc).__name__,
+                exc,
+            )
+        else:
+            if n_frames > 0 and hb_analysis.results.hbonds.size > 0:
+                donor_resid_map = {rid: i for i, rid in enumerate(donor_resids)}
+                acceptor_resid_map = {rid: i for i, rid in enumerate(acceptor_resids)}
 
-        for row in hb_analysis.results.hbonds:
-            _, donor_idx, _, acceptor_idx, _, _ = row
-            donor_atom = universe.atoms[int(donor_idx)]
-            acceptor_atom = universe.atoms[int(acceptor_idx)]
-            d_rid = donor_atom.resid
-            a_rid = acceptor_atom.resid
-            if d_rid in donor_resid_map and a_rid in acceptor_resid_map:
-                di = donor_resid_map[d_rid]
-                ai = acceptor_resid_map[a_rid]
-                persistence_matrix[di, ai] += 1.0
+                for row in hb_analysis.results.hbonds:
+                    _, donor_idx, _, acceptor_idx, _, _ = row
+                    donor_atom = universe.atoms[int(donor_idx)]
+                    acceptor_atom = universe.atoms[int(acceptor_idx)]
+                    d_rid = donor_atom.resid
+                    a_rid = acceptor_atom.resid
+                    if d_rid in donor_resid_map and a_rid in acceptor_resid_map:
+                        di = donor_resid_map[d_rid]
+                        ai = acceptor_resid_map[a_rid]
+                        persistence_matrix[di, ai] += 1.0
 
-        persistence_matrix /= n_frames
+                persistence_matrix /= n_frames
 
     logger.info(
         "H-bond persistence map: %d donor residues × %d acceptor residues",
@@ -333,14 +351,7 @@ def ComputeBuriedSurfaceArea(
         ImportError: If ``MDAnalysis`` is not installed.
     """
     try:
-        from MDAnalysis.analysis.hydrogenbonds import HydrogenBondAnalysis  # noqa: F401
-        from MDAnalysis.analysis import leaflet  # noqa: F401
-    except ImportError:
-        pass  # MDAnalysis sub-module import check; actual check below.
-
-    try:
-        import MDAnalysis as mda
-        from MDAnalysis.analysis.hydrogenbonds import HydrogenBondAnalysis  # noqa: F401
+        import MDAnalysis  # noqa: F401
     except ImportError as exc:
         raise ImportError("MDAnalysis is required for ComputeBuriedSurfaceArea") from exc
 

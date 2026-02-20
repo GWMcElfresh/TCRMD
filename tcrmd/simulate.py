@@ -259,6 +259,11 @@ def RunEquilibration(
         simulation.saveState(checkpoint_path)
         logger.debug("Checkpoint saved: %s", checkpoint_path)
 
+    # Initialise velocities from a Maxwell-Boltzmann distribution at the
+    # target temperature.  Without this, velocities are zero after
+    # minimisation and the Langevin integrator produces NaN on the first step.
+    simulation.context.setVelocitiesToTemperature(temperature * unit.kelvin)
+
     logger.info(
         "Starting equilibration: %d steps at %.1f K", numSteps, temperature
     )

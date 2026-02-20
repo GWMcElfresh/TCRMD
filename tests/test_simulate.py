@@ -223,7 +223,9 @@ class TestRunEquilibration(unittest.TestCase):
     def _make_minimized_simulation(self):
         from tcrmd.simulate import MinimizeEnergy, SetupSystem
         sim, _ = SetupSystem(self.solvated_pdb, platformName="CPU")
-        MinimizeEnergy(sim, os.path.join(self.tmp, "pre_equil.pdb"), maxIterations=5)
+        # maxIterations=0 → run until convergence; ensures no residual
+        # high-force overlaps that would produce NaN on the first dynamics step.
+        MinimizeEnergy(sim, os.path.join(self.tmp, "pre_equil.pdb"), maxIterations=0)
         return sim
 
     def test_returns_trajectory_path(self):
