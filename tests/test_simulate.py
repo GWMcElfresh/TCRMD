@@ -175,7 +175,7 @@ class TestMinimizeEnergy(unittest.TestCase):
         from tcrmd.simulate import MinimizeEnergy
         sim = self._make_simulation()
         out = os.path.join(self.tmp, "minimized_neg.pdb")
-        energy = MinimizeEnergy(sim, out, maxIterations=5)
+        energy = MinimizeEnergy(sim, out, maxIterations=0)
         self.assertLess(energy, 0.0,
                         "Potential energy should be negative after minimisation")
 
