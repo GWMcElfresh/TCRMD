@@ -8,7 +8,7 @@ on:
       - "tcrmd/system_preparation.py"
       - "tests/test_simulate.py"
       - "tests/data/**"
-      - "docker/simulate.Dockerfile"
+      - "docker/simulate/**"
       - "envs/simulate.yaml"
       - ".github/workflows/03_simulate.yml"
   pull_request:
@@ -18,34 +18,17 @@ on:
 jobs:
   test-simulate:
     name: Simulation Tests
-    runs-on: ubuntu-latest
+    uses: GWMcElfresh/dockerDependencies/.github/workflows/docker-cache.yml@main
     permissions:
       contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: |
-          docker build \
-            -f docker/simulate.Dockerfile \
-            -t tcrmd-simulate:${{ github.sha }} \
-            .
-
-      - name: Run test suite
-        run: |
-          mkdir -p test-results
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            tcrmd-simulate:${{ github.sha }} \
-            /workspace/tests/test_simulate.py \
-            -v --tb=short \
-            --junitxml=/workspace/test-results/simulate-results.xml
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: simulate-test-results-${{ github.sha }}
-          path: test-results/
-          retention-days: 7
+      packages: write
+    with:
+      dockerfile-path: docker/simulate
+      context: .
+      dependency-files: envs/simulate.yaml
+      test-command: >-
+        python -m pytest tests/test_simulate.py
+        -v --tb=short
+      skip-runtime: true
+      push-images: true
+      runtime-image-name: tcrmd-simulate:ci

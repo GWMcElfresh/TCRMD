@@ -7,7 +7,7 @@ on:
       - "tcrmd/inference_analytics.py"
       - "tests/test_inference_analytics.py"
       - "tests/data/**"
-      - "docker/inference_analytics.Dockerfile"
+      - "docker/inference_analytics/**"
       - "envs/inference_analytics.yaml"
       - ".github/workflows/04_inference_analytics.yml"
   pull_request:
@@ -17,34 +17,17 @@ on:
 jobs:
   test-inference-analytics:
     name: Inference & Analytics Tests
-    runs-on: ubuntu-latest
+    uses: GWMcElfresh/dockerDependencies/.github/workflows/docker-cache.yml@main
     permissions:
       contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: |
-          docker build \
-            -f docker/inference_analytics.Dockerfile \
-            -t tcrmd-analytics:${{ github.sha }} \
-            .
-
-      - name: Run test suite
-        run: |
-          mkdir -p test-results
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            tcrmd-analytics:${{ github.sha }} \
-            /workspace/tests/test_inference_analytics.py \
-            -v --tb=short \
-            --junitxml=/workspace/test-results/analytics-results.xml
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: analytics-test-results-${{ github.sha }}
-          path: test-results/
-          retention-days: 7
+      packages: write
+    with:
+      dockerfile-path: docker/inference_analytics
+      context: .
+      dependency-files: envs/inference_analytics.yaml
+      test-command: >-
+        python -m pytest tests/test_inference_analytics.py
+        -v --tb=short
+      skip-runtime: true
+      push-images: true
+      runtime-image-name: tcrmd-analytics:ci
