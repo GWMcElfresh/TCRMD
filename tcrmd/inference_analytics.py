@@ -320,6 +320,85 @@ def ComputeContactMap(
     return resids_a, resids_b, contact_matrix
 
 
+# ---------------------------------------------------------------------------
+# SASA helpers (pure NumPy, no external library required)
+# ---------------------------------------------------------------------------
+
+# Bondi van der Waals radii in Å (element symbol → radius).
+_VDW_RADII: dict = {
+    "H": 1.20, "C": 1.70, "N": 1.55, "O": 1.52,
+    "S": 1.80, "P": 1.80, "F": 1.47, "Cl": 1.75,
+    "Br": 1.85, "I": 1.98,
+}
+_VDW_DEFAULT: float = 1.70  # fallback for unknown elements
+
+
+def _atom_radii(atomgroup) -> np.ndarray:
+    """Return per-atom VDW radii (Å) for an MDAnalysis AtomGroup."""
+    result = []
+    for atom in atomgroup:
+        element = (atom.element if hasattr(atom, "element") and atom.element else
+                   atom.name[0].upper())
+        result.append(_VDW_RADII.get(element, _VDW_DEFAULT))
+    return np.array(result, dtype=float)
+
+
+def _shrake_rupley(
+    positions: np.ndarray,
+    radii: np.ndarray,
+    probe_radius: float = 1.4,
+    n_sphere_points: int = 92,
+) -> float:
+    """Compute total SASA (Å²) using the Shrake-Rupley rolling-sphere algorithm.
+
+    Args:
+        positions: Array of shape ``(N, 3)`` with atom coordinates in Å.
+        radii: Array of shape ``(N,)`` with van der Waals radii in Å.
+        probe_radius: Probe sphere radius in Å (default 1.4 for water).
+        n_sphere_points: Number of test points per atom sphere (default 92).
+
+    Returns:
+        Total SASA in Å².
+    """
+    if len(positions) == 0:
+        return 0.0
+
+    eff_r = radii + probe_radius  # effective sphere radii, shape (N,)
+    n_atoms = len(positions)
+
+    # Golden-spiral distribution of K points on the unit sphere.
+    indices = np.arange(n_sphere_points, dtype=float) + 0.5
+    phi = np.arccos(1.0 - 2.0 * indices / n_sphere_points)
+    theta = np.pi * (1.0 + np.sqrt(5.0)) * indices
+    sphere_pts = np.column_stack([
+        np.sin(phi) * np.cos(theta),
+        np.sin(phi) * np.sin(theta),
+        np.cos(phi),
+    ])  # shape (K, 3)
+
+    total_sasa = 0.0
+    eff_r2 = eff_r ** 2  # shape (N,)
+
+    for i in range(n_atoms):
+        # Probe points around atom i: shape (K, 3)
+        probe_pts = positions[i] + eff_r[i] * sphere_pts
+
+        # Squared distances from each probe point to every other atom: (K, N)
+        diff = probe_pts[:, np.newaxis, :] - positions[np.newaxis, :, :]
+        d2 = (diff ** 2).sum(axis=-1)
+
+        # Ignore self
+        d2[:, i] = np.inf
+
+        # A probe point is buried if it falls inside ANY other atom's sphere
+        buried = np.any(d2 <= eff_r2[np.newaxis, :], axis=-1)  # (K,)
+
+        exposed_frac = float(np.sum(~buried)) / n_sphere_points
+        total_sasa += 4.0 * np.pi * eff_r[i] ** 2 * exposed_frac
+
+    return float(total_sasa)
+
+
 def ComputeBuriedSurfaceArea(
     topologyPath: str,
     trajectoryPath: str,
@@ -332,6 +411,9 @@ def ComputeBuriedSurfaceArea(
 
     BSA = ½ × (SASA_A + SASA_B − SASA_complex).  A positive BSA indicates
     solvent-accessible surface that is buried upon TCR binding.
+
+    SASA is computed using a pure-NumPy implementation of the Shrake-Rupley
+    rolling-sphere algorithm (no external SASA library required).
 
     Args:
         topologyPath: Path to the topology file.
@@ -361,48 +443,22 @@ def ComputeBuriedSurfaceArea(
     except ImportError as exc:
         raise ImportError("MDAnalysis is required for ComputeBuriedSurfaceArea") from exc
 
-    # ShrakeRupley was introduced in MDAnalysis 2.4.0.  Try the canonical path
-    # first; fall back to the legacy location used in some conda-forge builds.
-    try:
-        from MDAnalysis.analysis.solvent_accessibility import ShrakeRupley
-    except ImportError:
-        try:
-            from MDAnalysis.analysis.hydration_analysis import (  # type: ignore[no-redef]
-                ShrakeRupley,
-            )
-        except ImportError as exc:
-            raise ImportError(
-                "MDAnalysis>=2.4 with ShrakeRupley is required for "
-                "ComputeBuriedSurfaceArea"
-            ) from exc
-
     universe = _load_universe(topologyPath, trajectoryPath)
 
     group_a = universe.select_atoms(selectionA)
     group_b = universe.select_atoms(selectionB)
     complex_group = group_a | group_b
 
-    # Run each ShrakeRupley analysis over the full trajectory in a separate
-    # pass.  Calling ShrakeRupley.run() inside a "for ts in trajectory:" loop
-    # would reset the trajectory position on every frame, causing incorrect
-    # frame ordering.  Three independent passes are correct and deterministic.
-    sr_a = ShrakeRupley(group_a, probe_radius=probeRadius)
-    sr_a.run()
-
-    sr_b = ShrakeRupley(group_b, probe_radius=probeRadius)
-    sr_b.run()
-
-    sr_complex = ShrakeRupley(complex_group, probe_radius=probeRadius)
-    sr_complex.run()
-
-    n_frames = len(universe.trajectory)
-    frame_indices = list(range(n_frames))
+    frame_indices = []
     bsa_values = []
-    for i in range(n_frames):
-        sasa_a = float(sr_a.results.areas[i].sum())
-        sasa_b = float(sr_b.results.areas[i].sum())
-        sasa_complex = float(sr_complex.results.areas[i].sum())
-        bsa_values.append(0.5 * (sasa_a + sasa_b - sasa_complex))
+    for ts in universe.trajectory:
+        sasa_a = _shrake_rupley(group_a.positions, _atom_radii(group_a), probeRadius)
+        sasa_b = _shrake_rupley(group_b.positions, _atom_radii(group_b), probeRadius)
+        sasa_cx = _shrake_rupley(
+            complex_group.positions, _atom_radii(complex_group), probeRadius
+        )
+        frame_indices.append(ts.frame)
+        bsa_values.append(0.5 * (sasa_a + sasa_b - sasa_cx))
 
     frame_arr = np.array(frame_indices, dtype=int)
     bsa_arr = np.array(bsa_values, dtype=float)
