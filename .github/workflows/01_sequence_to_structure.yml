@@ -1,0 +1,33 @@
+name: "01 · Sequence-to-Structure"
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+    paths:
+      - "tcrmd/sequence_to_structure.py"
+      - "tests/test_sequence_to_structure.py"
+      - "tests/data/**"
+      - "docker/sequence_to_structure/**"
+      - "envs/sequence_to_structure.yaml"
+      - ".github/workflows/01_sequence_to_structure.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-sequence-to-structure:
+    name: Sequence-to-Structure Tests
+    uses: GWMcElfresh/dockerDependencies/.github/workflows/docker-cache.yml@main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      dockerfile-path: docker/sequence_to_structure
+      context: .
+      dependency-files: envs/sequence_to_structure.yaml
+      test-command: >-
+        python -m pytest tests/test_sequence_to_structure.py
+        -v --tb=short
+      skip-runtime: true
+      push-images: true
+      runtime-image-name: tcrmd-s2s:ci

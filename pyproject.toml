@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tcrmd"
+version = "0.1.0"
+description = "TCR-pMHC Ternary Complex Molecular Dynamics Pipeline"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.25",
+]
+
+[project.optional-dependencies]
+full = [
+    "openmm>=8.1",
+    "pdbfixer>=1.9",
+    "mdanalysis>=2.6",
+    "mdtraj>=1.9",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "pandas>=2.1",
+    "propka>=3.5",
+    "boltz>=0.4",
+]
+test = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "numpy>=1.25",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"

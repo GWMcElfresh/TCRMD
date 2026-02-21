@@ -1,0 +1,33 @@
+name: "04 · Inference & Analytics"
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+    paths:
+      - "tcrmd/inference_analytics.py"
+      - "tests/test_inference_analytics.py"
+      - "tests/data/**"
+      - "docker/inference_analytics/**"
+      - "envs/inference_analytics.yaml"
+      - ".github/workflows/04_inference_analytics.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-inference-analytics:
+    name: Inference & Analytics Tests
+    uses: GWMcElfresh/dockerDependencies/.github/workflows/docker-cache.yml@main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      dockerfile-path: docker/inference_analytics
+      context: .
+      dependency-files: envs/inference_analytics.yaml
+      test-command: >-
+        python -m pytest tests/test_inference_analytics.py
+        -v --tb=short
+      skip-runtime: true
+      push-images: true
+      runtime-image-name: tcrmd-analytics:ci

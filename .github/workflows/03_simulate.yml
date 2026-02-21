@@ -1,0 +1,34 @@
+name: "03 · Simulation"
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+    paths:
+      - "tcrmd/simulate.py"
+      - "tcrmd/system_preparation.py"
+      - "tests/test_simulate.py"
+      - "tests/data/**"
+      - "docker/simulate/**"
+      - "envs/simulate.yaml"
+      - ".github/workflows/03_simulate.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-simulate:
+    name: Simulation Tests
+    uses: GWMcElfresh/dockerDependencies/.github/workflows/docker-cache.yml@main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      dockerfile-path: docker/simulate
+      context: .
+      dependency-files: envs/simulate.yaml
+      test-command: >-
+        python -m pytest tests/test_simulate.py
+        -v --tb=short
+      skip-runtime: true
+      push-images: true
+      runtime-image-name: tcrmd-simulate:ci

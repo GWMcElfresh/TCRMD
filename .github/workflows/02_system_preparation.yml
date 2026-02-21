@@ -1,0 +1,33 @@
+name: "02 · System Preparation"
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+    paths:
+      - "tcrmd/system_preparation.py"
+      - "tests/test_system_preparation.py"
+      - "tests/data/**"
+      - "docker/system_preparation/**"
+      - "envs/system_preparation.yaml"
+      - ".github/workflows/02_system_preparation.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-system-preparation:
+    name: System Preparation Tests
+    uses: GWMcElfresh/dockerDependencies/.github/workflows/docker-cache.yml@main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      dockerfile-path: docker/system_preparation
+      context: .
+      dependency-files: envs/system_preparation.yaml
+      test-command: >-
+        python -m pytest tests/test_system_preparation.py
+        -v --tb=short
+      skip-runtime: true
+      push-images: true
+      runtime-image-name: tcrmd-sysprep:ci

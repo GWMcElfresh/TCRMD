@@ -1,0 +1,29 @@
+REMARK  Minimal alanine tripeptide for unit testing.
+REMARK  Suitable for PDBFixer, OpenMM, and MDAnalysis.
+ATOM      1  N   ALA A   1       1.201   0.847   0.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00           C
+ATOM      3  C   ALA A   1      -1.250   0.870   0.000  1.00  0.00           C
+ATOM      4  O   ALA A   1      -1.190   2.090   0.000  1.00  0.00           O
+ATOM      5  CB  ALA A   1       0.150  -0.770  -1.298  1.00  0.00           C
+ATOM      6  N   ALA A   2      -2.390   0.210   0.000  1.00  0.00           N
+ATOM      7  CA  ALA A   2      -3.670   0.920   0.000  1.00  0.00           C
+ATOM      8  C   ALA A   2      -4.850   0.000   0.000  1.00  0.00           C
+ATOM      9  O   ALA A   2      -4.790  -1.220   0.000  1.00  0.00           O
+ATOM     10  CB  ALA A   2      -3.780   1.710   1.298  1.00  0.00           C
+ATOM     11  N   ALA A   3      -5.980   0.570   0.000  1.00  0.00           N
+ATOM     12  CA  ALA A   3      -7.240  -0.130   0.000  1.00  0.00           C
+ATOM     13  C   ALA A   3      -8.390   0.870   0.000  1.00  0.00           C
+ATOM     14  O   ALA A   3      -8.360   2.090   0.000  1.00  0.00           O
+ATOM     15  CB  ALA A   3      -7.350  -0.930   1.298  1.00  0.00           C
+ATOM     16  N   ALA A   4      -9.490   0.210   0.000  1.00  0.00           N
+ATOM     17  CA  ALA A   4     -10.770   0.920   0.000  1.00  0.00           C
+ATOM     18  C   ALA A   4     -11.950   0.000   0.000  1.00  0.00           C
+ATOM     19  O   ALA A   4     -11.900  -1.220   0.000  1.00  0.00           O
+ATOM     20  CB  ALA A   4     -10.880   1.710   1.298  1.00  0.00           C
+ATOM     21  N   ALA A   5     -13.080   0.570   0.000  1.00  0.00           N
+ATOM     22  CA  ALA A   5     -14.340  -0.130   0.000  1.00  0.00           C
+ATOM     23  C   ALA A   5     -15.490   0.870   0.000  1.00  0.00           C
+ATOM     24  O   ALA A   5     -15.440   2.090   0.000  1.00  0.00           O
+ATOM     25  CB  ALA A   5     -14.450  -0.930   1.298  1.00  0.00           C
+ATOM     26  OXT ALA A   5     -16.580   0.320   0.000  1.00  0.00           O
+END
