@@ -163,7 +163,7 @@ def SolvateSystem(
     outputPdbPath: str,
     padding: float = 1.0,
     ionicStrength: float = 0.15,
-    waterModel: str = "tip3p",
+    waterModel: str = "tip3pfb",
     positiveIon: str = "Na+",
     negativeIon: str = "Cl-",
 ) -> str:
@@ -178,7 +178,9 @@ def SolvateSystem(
         padding: Water box padding around the solute in nanometres (default 1.0).
         ionicStrength: Target ionic strength in mol/L (default 0.15 M NaCl).
         waterModel: Water model identifier recognised by OpenMM; e.g.
-            ``"tip3p"``, ``"tip3pfb"``, ``"opc"``.
+            ``"tip3pfb"`` (default), ``"tip3p"``, ``"opc"``.  The default
+            matches the ``amber14/tip3pfb.xml`` force field used by
+            :func:`~tcrmd.simulate.SetupSystem`.
         positiveIon: Counter-ion species for positive charge (default ``"Na+"``).
         negativeIon: Counter-ion species for negative charge (default ``"Cl-"``).
 
@@ -202,7 +204,7 @@ def SolvateSystem(
 
     pdb = app.PDBFile(inputPdbPath)
 
-    # Use AMBER ff19SB + selected water model for force-field-consistent solvation.
+    # Use AMBER14SB + selected water model for force-field-consistent solvation.
     ff_files = [
         "amber14-all.xml",
         f"amber14/{waterModel}.xml",

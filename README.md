@@ -16,7 +16,7 @@ Sequences (JSON)
                  ▼
 ┌─────────────────────────────┐
 │  Stage 2 · System           │  PDBFixer cleaning → PROPKA protonation
-│           Preparation       │  → OpenMM solvation (TIP3P, 0.15 M NaCl)
+│           Preparation       │  → OpenMM solvation (TIP3P-FB, 0.15 M NaCl)
 └────────────────┬────────────┘
                  │ solvated.pdb
                  ▼

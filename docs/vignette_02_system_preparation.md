@@ -149,7 +149,7 @@ solvated_pdb = SolvateSystem(
     outputPdbPath="intermediate/solvated.pdb",
     padding=1.0,           # nm; water extends ≥1 nm beyond every solute atom
     ionicStrength=0.15,    # mol/L; 0.15 M NaCl (physiological)
-    waterModel="tip3p",    # PBC-compatible 3-point water model
+    waterModel="tip3pfb",  # matches amber14/tip3pfb.xml used by the simulation stage
     positiveIon="Na+",
     negativeIon="Cl-",
 )
@@ -164,7 +164,7 @@ print("Solvated PDB:", solvated_pdb)
 | `outputPdbPath` | `str` | — | Destination path |
 | `padding` | `float` | `1.0` | Minimum distance from solute to box edge (nm) |
 | `ionicStrength` | `float` | `0.15` | Target salt concentration (mol/L) |
-| `waterModel` | `str` | `"tip3p"` | OpenMM water model identifier (`"tip3p"`, `"tip3pfb"`, `"opc"`) |
+| `waterModel` | `str` | `"tip3pfb"` | OpenMM water model identifier (`"tip3pfb"`, `"tip3p"`, `"opc"`); default matches the simulation force field |
 | `positiveIon` | `str` | `"Na+"` | Cation species |
 | `negativeIon` | `str` | `"Cl-"` | Anion species |
 
@@ -176,18 +176,6 @@ Absolute path to the written solvated PDB (`str`).
 
 - `FileNotFoundError` — `inputPdbPath` does not exist
 - `ImportError` — `openmm` is not installed
-
-### Notes on water models
-
-`SolvateSystem` defaults to `"tip3p"` for box building.  The simulation stage
-(Stage 3) independently loads force-field XML files and defaults to
-`amber14/tip3pfb.xml` (TIP3P-FB).  For a fully consistent force field,
-pass `waterModel="tip3pfb"` to `SolvateSystem` so the box geometry and
-simulation forcefield match:
-
-```python
-SolvateSystem(ready_pdb, "intermediate/solvated.pdb", waterModel="tip3pfb")
-```
 
 ### Notes on system size
 

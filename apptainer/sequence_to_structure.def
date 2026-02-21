@@ -1,0 +1,27 @@
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.8
+
+%labels
+    Maintainer TCRMD
+    Stage sequence_to_structure
+    Description "CDR extraction, Boltz input formatting, structural inference, Kabsch alignment"
+
+%files
+    envs/sequence_to_structure.yaml /tmp/env.yaml
+    tcrmd/ /app/tcrmd/
+    tests/  /app/tests/
+    pyproject.toml /app/pyproject.toml
+
+%post
+    micromamba install -y -n base -f /tmp/env.yaml && \
+    micromamba clean --all --yes
+
+%environment
+    export PATH="/opt/conda/bin:$PATH"
+    export MAMBA_ROOT_PREFIX="/opt/conda"
+
+%runscript
+    exec python "$@"
+
+%test
+    python -m pytest /app/tests/test_sequence_to_structure.py -v --tb=short

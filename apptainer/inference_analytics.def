@@ -1,0 +1,27 @@
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.8
+
+%labels
+    Maintainer TCRMD
+    Stage inference_analytics
+    Description "MDAnalysis post-simulation analytics: RMSF, H-bonds, contacts, BSA, COM distance"
+
+%files
+    envs/inference_analytics.yaml /tmp/env.yaml
+    tcrmd/ /app/tcrmd/
+    tests/  /app/tests/
+    pyproject.toml /app/pyproject.toml
+
+%post
+    micromamba install -y -n base -f /tmp/env.yaml && \
+    micromamba clean --all --yes
+
+%environment
+    export PATH="/opt/conda/bin:$PATH"
+    export MAMBA_ROOT_PREFIX="/opt/conda"
+
+%runscript
+    exec python "$@"
+
+%test
+    python -m pytest /app/tests/test_inference_analytics.py -v --tb=short
